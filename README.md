@@ -220,3 +220,81 @@ OLED 实时显示：
 
 通过网盘分享的文件：STM32_Third_Assignment_Videos
 链接: https://pan.baidu.com/s/1VT5poq2Z5NyRF6vJkTQxlA?pwd=n6v8 提取码: n6v8
+## 八、选做功能：硬件 I²C 驱动 OLED
+
+在完成软件 I²C OLED 显示功能的基础上，进一步实现了使用 STM32 硬件 I²C 外设驱动 OLED 显示屏。
+
+本实验使用 STM32CubeMX 配置 I²C 外设，并在程序中通过 HAL 库的 `HAL_I2C_Master_Transmit()` 接口向 OLED 发送命令和显示数据。
+
+相比软件 I²C 使用 GPIO 模拟时序，硬件 I²C 由 STM32 的 I²C 外设完成通信时序控制。
+
+硬件 I²C 工程保留了原有流水灯、按键控制、串口数据包接收和串口状态反馈功能。
+
+经过实际烧录和测试，OLED 能够正常显示运行状态、流水方向、切换间隔和当前 LED 编号。按键控制、LED 流水灯以及串口反馈均正常，连续测试 5～10 次未发现异常。
+
+软件 I²C 和硬件 I²C 分别保留为独立工程，以便进行比较和验收。
+
+硬件 I²C 工程目录：`STM32_Third_Assignment_HW_I2C`。
+
+## 九、选做功能：USART1 DMA 串口发送
+
+### 1. DMA 功能介绍
+
+在原有 USART1 串口中断发送功能的基础上，进一步实现了 DMA 方式发送状态反馈信息。
+
+使用 STM32CubeMX 为 USART1_TX 配置 DMA1 Channel4，传输方向为 Memory To Peripheral（内存到外设），并启用 DMA 对应的中断。
+
+DMA 可以在外设与内存之间传输数据，从而减少 CPU 逐字节处理发送数据的工作量。
+
+DMA 工程目录：`STM32_Third_Assignment_DMA`。
+
+### 2. DMA 关键源码
+
+程序使用 `snprintf()` 生成状态反馈字符串，并通过 `HAL_UART_Transmit_DMA()` 启动串口 DMA 发送。
+
+`main.c` 中的关键代码如下：
+
+```c
+if (len > 0 &&
+    len < (int)sizeof(uart_tx_buffer))
+{
+    uart_tx_busy = 1;
+
+    if (HAL_UART_Transmit_DMA(
+            &huart1,
+            uart_tx_buffer,
+            (uint16_t)len) == HAL_OK)
+    {
+        status_feedback_pending = 0;
+    }
+    else
+    {
+        uart_tx_busy = 0;
+    }
+}
+```
+
+### 3. DMA 发送完成回调
+
+DMA 传输完成并触发 UART 发送完成回调后，程序清除发送忙碌标志。
+
+```c
+void HAL_UART_TxCpltCallback(
+    UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1)
+    {
+        uart_tx_busy = 0;
+    }
+}
+```
+
+其中，`uart_tx_busy` 用于记录发送状态，避免在一次异步发送尚未完成时重复启动新的发送操作。
+
+### 4. 实现说明
+
+通过 DMA 发送，STM32 可以在串口传输期间继续执行流水灯控制、按键处理和 OLED 状态显示等任务。
+
+目前已经通过源代码检查确认 DMA 初始化、DMA 发送接口及发送完成回调均已实现。DMA 方式的实际串口发送效果仍需结合烧录后的串口输出进行验证。
+
+原有串口中断发送版本仍然保留，便于与 DMA 发送方式进行比较。
